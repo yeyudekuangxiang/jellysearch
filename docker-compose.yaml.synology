@@ -1,6 +1,6 @@
 services:
   jellysearch:
-    image: docker.1ms.run/yeyudekuangxiang/jellysearch:latest
+    image: yeyudekuangxiang/jellysearch:latest
     restart: unless-stopped
     container_name: jellysearch
     volumes:
@@ -23,7 +23,7 @@ services:
       - traefik.http.services.jellysearch.loadbalancer.server.port=5000
       - traefik.http.routers.jellysearch.rule=!Path(`/Genres`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))
   meilisearch:
-    image: docker.1ms.run/getmeili/meilisearch:v1.16.0-rc.2
+    image: getmeili/meilisearch:v1.16.0-rc.2
     container_name: meilisearch
     restart: unless-stopped
     volumes:
