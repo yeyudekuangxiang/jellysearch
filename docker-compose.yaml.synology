@@ -1,0 +1,43 @@
+services:
+  jellysearch:
+    image: docker.1ms.run/yeyudekuangxiang/jellysearch:latest
+    restart: unless-stopped
+    container_name: jellysearch
+    volumes:
+      - /var/packages/jellyfin/var:/config:ro
+      - /volume1/music:/data/music
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      MEILI_MASTER_KEY: "Abcabc123999"
+      MEILI_URL: "http://meilisearch:7700"
+      INDEX_CRON: "0 0 0/2 ? * * *"
+      JELLYFIN_CONFIG_DIR: "/config/data"
+      JELLYFIN_URL: "http://host.docker.internal:8096"
+      ASSEST_PATH_REPLACE: '[{"/volume1/music":"/data/music"}]' 
+      INDEX_LRC: "true"
+    links:
+      - meilisearch
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.jellysearch.loadbalancer.server.port=5000
+      - traefik.http.routers.jellysearch.rule=!Path(`/Genres`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))
+  meilisearch:
+    image: docker.1ms.run/getmeili/meilisearch:v1.16.0-rc.2
+    container_name: meilisearch
+    restart: unless-stopped
+    volumes:
+      - ./meilisearch:/meili_data
+    environment:
+      MEILI_MASTER_KEY: "Abcabc123999"
+  nginx:
+    image: docker.1ms.run/nginx:latest
+    restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    links:
+      - jellysearch
+    ports:
+      - 8090:80
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
