@@ -15,17 +15,18 @@ public class SearchController : ControllerBase
     private ILogger Log { get; set; }
     private JellyfinProxyService Proxy { get; }
     private Meilisearch.Index Index { get; }
-
+    private RedisService Redis { get; }
     private JsonSerializerOptions DefaultJsonOptions = new()
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public SearchController(ILoggerFactory logFactory, JellyfinProxyService proxy, Meilisearch.Index index)
+    public SearchController(ILoggerFactory logFactory, JellyfinProxyService proxy, Meilisearch.Index index,RedisService redis)
     {
         this.Log = logFactory.CreateLogger<SearchController>();
         this.Proxy = proxy;
         this.Index = index;
+        this.Redis = redis;
     }
 
     /// <summary>
@@ -50,8 +51,12 @@ public class SearchController : ControllerBase
         [FromRoute(Name = "UserId")] string? routeUserId,
         [FromQuery(Name = "UserId")] string? queryUserId)
     {
+        Random random = new Random();
+        var searchId =  random.Next();
+        var searchStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+        this.Log.LogInformation("{searchId}搜索开始:{time}",searchId,searchStartTime);
         // Get the requested path
-        var path = this.Request.Path.Value;
+        var path = this.Request.Path.Value ?? "";
 
         // Get the user id from either the route or the query
         var userId = routeUserId ?? queryUserId;
@@ -91,8 +96,8 @@ public class SearchController : ControllerBase
             this.Log.LogInformation("Proxying non-search request");
 
             var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
-
-            if(response == null)
+            this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
+            if (response == null)
                 return Content(JellyfinResponses.Empty, "application/json");
             else
                 return Content(response, "application/json");
@@ -113,18 +118,34 @@ public class SearchController : ControllerBase
             // The default limit for search results as to not request too many IDs from Jellyfin
             // The default limit can't be exceeded but it can be reduced
             var limit = 20;
+            var offset = 0;
 
             // Override the limit if it is less than the value defined above
-            if(this.Request.Query.TryGetValue("Limit", out StringValues requestedLimit))
+            if (this.Request.Query.TryGetValue("Offset", out StringValues requestedOffset))
+            {
+                if (requestedOffset.Count == 1)
+                {
+                    if (int.TryParse(requestedOffset, out int parsed))
+                    {
+                        offset = parsed;
+                    }
+                    else
+                    {
+                        this.Log.LogWarning("Received invalid limit!");
+                    }
+                }
+                else
+                {
+                    this.Log.LogWarning("Got more than one limit argument, ignoring");
+                }
+            }
+            if (this.Request.Query.TryGetValue("Limit", out StringValues requestedLimit))
             {
                 if (requestedLimit.Count == 1)
                 {
                     if (int.TryParse(requestedLimit, out int parsed))
                     {
-                        if (parsed < limit)
-                        {
-                            limit = parsed;
-                        }
+                        limit = parsed;
                     }
                     else
                     {
@@ -139,9 +160,9 @@ public class SearchController : ControllerBase
 
             var includeItemTypes = new List<string>();
 
-            if(query.TryGetValue("IncludeItemTypes", out StringValues includedTypes))
+            if (query.TryGetValue("IncludeItemTypes", out StringValues includedTypes))
             {
-                if(includedTypes.Count == 1)
+                if (includedTypes.Count == 1)
                 {
                     // If item count is 1, split by , and add all elements
                     includeItemTypes.AddRange(includedTypes[0].Split(','));
@@ -156,7 +177,7 @@ public class SearchController : ControllerBase
             var filteredTypes = new List<string>();
             var additionalFilters = new List<string>();
 
-            if(includeItemTypes.Count == 0)
+            if (includeItemTypes.Count == 0)
             {
                 // Add types if no item types are provided
                 if (path != null)
@@ -188,7 +209,7 @@ public class SearchController : ControllerBase
                 {
                     var type = JellyfinHelper.GetFullItemType(includeItemType);
 
-                    if(type == null)
+                    if (type == null)
                     {
                         this.Log.LogWarning("Got invalid type: {type}", includeItemType);
                     }
@@ -202,20 +223,24 @@ public class SearchController : ControllerBase
             var items = new List<Item>();
 
             var searchQuery = new SearchQuery();
-            
+            var total = 0;
             if (searchTerm.StartsWith("lrc:", StringComparison.Ordinal))
             {
                 searchTerm = searchTerm.Substring(4);
                 searchQuery.AttributesToSearchOn = new[] { "lrcContent" };
-            }else  if (searchTerm.StartsWith("name:", StringComparison.Ordinal))
+            }
+            else if (searchTerm.StartsWith("name:", StringComparison.Ordinal))
             {
                 searchTerm = searchTerm.Substring(5);
                 searchQuery.AttributesToSearchOn = new[] { "name" };
-            }else  if (searchTerm.StartsWith("artist:", StringComparison.Ordinal))
+            }
+            else if (searchTerm.StartsWith("artist:", StringComparison.Ordinal))
             {
-                searchTerm = searchTerm.Substring(4);
+                searchTerm = searchTerm.Substring(7);
                 searchQuery.AttributesToSearchOn = new[] { "artists" };
             }
+            searchQuery.Limit = limit;
+            searchQuery.Offset = offset;
             if (filteredTypes.Count > 0)
             {
                 // Loop through each requested type and search
@@ -223,79 +248,69 @@ public class SearchController : ControllerBase
                 {
                     var filter = "type = " + filteredType;
 
-                    if(additionalFilters.Count > 0)
+                    if (additionalFilters.Count > 0)
                     {
                         filter += " AND " + string.Join(" AND ", additionalFilters);
                     }
 
                     searchQuery.Filter = filter;
-                    searchQuery.Limit = limit;
-                     var options = new JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
-        // 序列化对象为JSON字符串
-        string jsonString = JsonSerializer.Serialize(searchQuery, options);
-        // 打印JSON
-        Console.WriteLine(jsonString);
-        Console.WriteLine(searchTerm);
+
                     var results = await this.Index.SearchAsync<Item>(searchTerm, searchQuery);
- string jsonString2 = JsonSerializer.Serialize(results, options);
-         Console.WriteLine(jsonString2);
+                    var b = results as Meilisearch.SearchResult<Item>;
+                    total = b.EstimatedTotalHits;
                     items.AddRange(results.Hits);
                 }
             }
             else
             {
-                searchQuery.Limit = limit;
                 // Search without filtering the type
-                var options = new JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
-        // 序列化对象为JSON字符串
-        string jsonString = JsonSerializer.Serialize(searchQuery, options);
-        // 打印JSON
-        Console.WriteLine(jsonString);
-                Console.WriteLine(searchTerm);
                 var results = await this.Index.SearchAsync<Item>(searchTerm, searchQuery);
-
+                var b = results as Meilisearch.SearchResult<Item>;
+                total = b.EstimatedTotalHits;
                 items.AddRange(results.Hits);
             }
 
+            this.Log.LogInformation("{searchId}美丽搜索耗时:{time}ms", searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
             if (items.Count > 0)
             {
                 this.Log.LogInformation("Proxying search request with {hits} results", items.Count);
 
-                query.Add("ids", string.Join(',', items.Select(x => x.Guid.Replace("-", ""))));
 
-                if(path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
+                //query.Add("ids", string.Join(',', items.Select(x => x.Guid.Replace("-", ""))));
+
+                if (path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
                 {
                     query.Add("fields", "PrimaryImageAspectRatio"); // Add more fields we need for search hints
                 }
+                var ids = new List<string>();
+                foreach (var item in items)
+                {
+                    ids.Add(item.Guid.Replace("-", ""));
+                }
 
-                var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
-
-                if(path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
+                var resultList = await this.GetItemsWithCacheFallback(ids, authorization, legacyToken, userId, query);
+                //var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
+                this.Log.LogInformation("{searchId}总搜索耗时:{time}ms",searchId,DateTimeOffset.Now.ToUnixTimeMilliseconds()-searchStartTime);
+                if (path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
                 {
                     // Handle search hints, expecting a root "SearchHints" array
                     // Restructure the Jellyfin result in a way that clients expecting search hints can work
 
-                    if (responseStream == null)
+                    if (resultList == null)
                         return Content(JellyfinResponses.EmptySearchHints, "application/json");
                     else
                     {
                         // We need to deserialize in order to change the format for the search hint endpoint
-                        var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse>(responseStream);
+                        //var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse>(responseStream);
 
-                        if(deserialized.TotalRecordCount == 0)
+                        if (resultList.Count == 0)
                             return Content(JellyfinResponses.EmptySearchHints, "application/json");
 
-                        foreach(var item in deserialized.Items)
+                        foreach (var item in resultList)
                         {
                             // Modify items for search hints
 
-                            if(item.ImageTags != null & item.ImageTags.ContainsKey("Primary"))
+                            if (item.ImageTags != null & item.ImageTags.ContainsKey("Primary"))
                             {
                                 item.PrimaryImageTag = item.ImageTags["Primary"];
                                 item.ImageTags = null;
@@ -303,23 +318,23 @@ public class SearchController : ControllerBase
 
                             // Try to get the parent back drop first and overwrite it if a item backdrop is available as well
                             // BackdropImageTag sometimes does not get returned on the Items endpoint
-                            if(item.ParentBackdropImageTags != null && item.ParentBackdropImageTags.Count > 0)
+                            if (item.ParentBackdropImageTags != null && item.ParentBackdropImageTags.Count > 0)
                             {
                                 item.BackdropImageTag = item.ParentBackdropImageTags[0];
                                 item.ParentBackdropImageTags = null;
                             }
-                            if(item.BackdropImageTags != null && item.BackdropImageTags.Count > 0)
+                            if (item.BackdropImageTags != null && item.BackdropImageTags.Count > 0)
                             {
                                 item.BackdropImageTag = item.BackdropImageTags[0];
                                 item.BackdropImageTags = null;
                             }
 
-                            if(item.AlbumId != null)
+                            if (item.AlbumId != null)
                             {
                                 item.BackdropImageItemId = item.AlbumId;
                                 //item.AlbumId = null;
                             }
-                            else if(item.ParentBackdropItemId != null)
+                            else if (item.ParentBackdropItemId != null)
                             {
                                 item.BackdropImageItemId = item.ParentBackdropItemId;
                                 item.ParentBackdropItemId = null;
@@ -329,7 +344,7 @@ public class SearchController : ControllerBase
                                 item.BackdropImageItemId = item.Id;
                             }
 
-                            if(item.SeriesName != null)
+                            if (item.SeriesName != null)
                             {
                                 item.Series = item.SeriesName;
                                 item.SeriesName = null;
@@ -342,8 +357,8 @@ public class SearchController : ControllerBase
 
                         var searchHintResponse = new JellyfinSearchHintResponse()
                         {
-                            SearchHints = deserialized.Items,
-                            TotalRecordCount = deserialized.TotalRecordCount,
+                            SearchHints = resultList,
+                            TotalRecordCount = total,
                         };
 
                         using Stream outputStream = new MemoryStream();
@@ -355,11 +370,20 @@ public class SearchController : ControllerBase
                 }
                 else
                 {
+                    var searchHintResponse = new JellyfinSearchHintResponse()
+                    {
+                        SearchHints = resultList,
+                        TotalRecordCount = total,
+                    };
+
+                    using Stream outputStream = new MemoryStream();
+                    await JsonSerializer.SerializeAsync(outputStream, searchHintResponse, this.DefaultJsonOptions);
+                    outputStream.Position = 0;
                     // Handle most Jellyfin routes expecting a root "Items" array
-                    if (responseStream == null)
+                    if (resultList == null)
                         return Content(JellyfinResponses.Empty, "application/json");
                     else
-                        return Content(await new StreamReader(responseStream).ReadToEndAsync(), "application/json");
+                        return Content(await new StreamReader(outputStream).ReadToEndAsync(), "application/json");
                 }
             }
             else
@@ -367,6 +391,79 @@ public class SearchController : ControllerBase
                 this.Log.LogInformation("No hits, not proxying");
                 return Content(JellyfinResponses.Empty, "application/json");
             }
+            
         }
+    }
+    
+
+    private async Task<List<JellyfinItem>> GetItemsWithCacheFallback(IEnumerable<string> ids,string authorization, string? legacyToken, string? userId, Dictionary<string, StringValues> query)
+    {
+        if (ids == null)
+            throw new ArgumentNullException(nameof(ids));
+        
+        var idList = ids.ToList();
+        if (idList.Count == 0)
+            return new List<JellyfinItem>();
+
+        // 1. 尝试从缓存获取数据
+        var cachedResults = await this.Redis.GetItemsByIds(idList);
+        
+        // 2. 识别缺失的项目ID
+        var missingIds = new List<string>();
+        var resultList = new List<JellyfinItem>(idList.Count);
+        
+        foreach (var id in idList)
+        {
+            if (cachedResults.TryGetValue(id, out var item))
+            {
+                resultList.Add(item);
+            }
+            else
+            {
+                resultList.Add(null); // 占位符，后续替换
+                missingIds.Add(id);
+            }
+        }
+        
+        // 3. 如果所有项目都在缓存中找到，直接返回
+        if (missingIds.Count == 0)
+            return resultList;
+        query.Add("ids", string.Join(',',missingIds));
+     
+        // 4. 从数据源获取缺失的项目
+        var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
+    
+        if (responseStream == null)
+            return resultList.Where(item => item != null).ToList();
+        var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse>(responseStream);
+
+        if(deserialized.TotalRecordCount == 0)
+            return resultList.Where(item => item != null).ToList();
+
+             // 5. 缓存新获取的数据
+        await this.Redis.UpdateItemsCache(deserialized.Items,TimeSpan.FromDays(1));
+        
+        
+        var sourceItems = new Dictionary<string, JellyfinItem>();
+        foreach(var item in deserialized.Items)
+        {
+            sourceItems[item.Id] = item;
+        }
+        
+        // 6. 组合结果并保持原始顺序
+        var missingIndex = 0;
+        for (int i = 0; i < resultList.Count; i++)
+        {
+            if (resultList[i] == null)
+            {
+                var id = idList[i];
+                if (sourceItems.TryGetValue(id, out var item))
+                {
+                    resultList[i] = item;
+                }
+                missingIndex++;
+            }
+        }
+        return resultList.Where(item => item != null).ToList();
     }
 }
