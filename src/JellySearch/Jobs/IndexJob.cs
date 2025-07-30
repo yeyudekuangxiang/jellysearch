@@ -17,7 +17,7 @@ public class MediaItem
 public class IndexJob : IJob
 {
     private string? JellyfinConfigDir { get; } = Environment.GetEnvironmentVariable("JELLYFIN_CONFIG_DIR");
-    private string? AssestPathReplace { get; } = Environment.GetEnvironmentVariable("ASSEST_PATH_REPLACE"); // [{"/volume1":"/data/music","/","\\"}]
+    private string? AssestPathReplace { get; } = Environment.GetEnvironmentVariable("ASSEST_PATH_REPLACE"); // [{"/volume1":"Z:","/":"\\"}]
     private string? IndexLrc { get; } = Environment.GetEnvironmentVariable("INDEX_LRC");
     private ILogger? Log { get; set; }
     private List<Dictionary<string, string>>? pathReplaceObj { get; set; }
@@ -28,7 +28,7 @@ public class IndexJob : IJob
 
         var logFactory = jobData["logFactory"] as ILoggerFactory;
         this.Log = logFactory.CreateLogger<IndexJob>();
-
+      
         try
         {
             this.Log.LogInformation("Indexing items...");
@@ -45,7 +45,7 @@ public class IndexJob : IJob
 
             // Change priority of fields; Meilisearch always uses camel case!
             await index.UpdateSearchableAttributesAsync(
-                new string[] { "name", "artists", "albumArtists", "originalTitle","lrcContent", "productionYear", "seriesName", "genres", "tags", "studios", "overview" }
+                new string[] { "name", "artists", "albumArtists", "originalTitle", "lrcContent", "productionYear", "seriesName", "genres", "tags", "studios", "overview" }
             );
 
             // We only need the GUID to pass to Jellyfin
@@ -55,7 +55,7 @@ public class IndexJob : IJob
 
             // Set ranking rules to add critic rating
             await index.UpdateRankingRulesAsync(
-                new string[] {  "exactness","proximity","attribute","words", "typo",  "sort", "communityRating:desc", "criticRating:desc" }
+                new string[] { "exactness", "proximity", "attribute", "words", "typo", "sort", "communityRating:desc", "criticRating:desc" }
             );
 
             var legacy = true;
@@ -92,7 +92,7 @@ public class IndexJob : IJob
             using var command = connection.CreateCommand();
 
             // Adjust query if querying a legacy database
-            if(legacy)
+            if (legacy)
                 command.CommandText = "SELECT guid, type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM TypedBaseItems";
             else
                 command.CommandText = "SELECT id, Type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM BaseItems";
@@ -124,14 +124,14 @@ public class IndexJob : IJob
                         Artists = !reader.IsDBNull(14) ? reader.GetString(14).Split('|') : null,
                         AlbumArtists = !reader.IsDBNull(15) ? reader.GetString(15).Split('|') : null,
                         LrcContent = this.GetFirstLyricContent(!reader.IsDBNull(16) ? reader.GetString(16) : null)
-                    };          
-                    items.Add(item);        
+                    };
+                    items.Add(item);
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
                     this.Log.LogError("Could not add an item to the index, ignoring item");
                     this.Log.LogError("Item index: " + (items.Count - 1));
-                    if(!reader.IsDBNull(4))
+                    if (!reader.IsDBNull(4))
                         this.Log.LogError("Item name: " + reader.GetString(4));
 
                     this.Log.LogDebug(e.Message);
@@ -141,7 +141,7 @@ public class IndexJob : IJob
 
 
             if (items.Count > 0)
-            { 
+            {
                 // Add items to search index in batches
                 await index.AddDocumentsInBatchesAsync<Item>(items, 5000, "guid");
             }

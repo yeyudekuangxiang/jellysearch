@@ -1,8 +1,8 @@
 namespace JellySearch.Jellyfin;
 
-public class JellyfinItemResponse
+public class JellyfinItemResponse<T>
 {
-    public List<JellyfinItem> Items { get; set; }
+    public List<T> Items { get; set; }
 
     public int TotalRecordCount { get; set; }
     public int StartIndex { get; set; }

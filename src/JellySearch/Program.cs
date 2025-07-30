@@ -24,8 +24,6 @@ var meilisearch = new MeilisearchClient(Environment.GetEnvironmentVariable("MEIL
 var index = meilisearch.Index("items");
 
 builder.Services.AddSingleton<Meilisearch.Index>(index); // Add Meilisearch index as service
-builder.Services.AddSingleton<RedisService, RedisService>(); // Add proxy service
-
 
 
 builder.Services.AddSingleton<JellyfinProxyService, JellyfinProxyService>(); // Add proxy service

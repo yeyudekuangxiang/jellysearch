@@ -15,18 +15,16 @@ public class SearchController : ControllerBase
     private ILogger Log { get; set; }
     private JellyfinProxyService Proxy { get; }
     private Meilisearch.Index Index { get; }
-    private RedisService Redis { get; }
     private JsonSerializerOptions DefaultJsonOptions = new()
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public SearchController(ILoggerFactory logFactory, JellyfinProxyService proxy, Meilisearch.Index index,RedisService redis)
+    public SearchController(ILoggerFactory logFactory, JellyfinProxyService proxy, Meilisearch.Index index)
     {
         this.Log = logFactory.CreateLogger<SearchController>();
         this.Proxy = proxy;
         this.Index = index;
-        this.Redis = redis;
     }
 
     /// <summary>
@@ -117,7 +115,7 @@ public class SearchController : ControllerBase
 
             // The default limit for search results as to not request too many IDs from Jellyfin
             // The default limit can't be exceeded but it can be reduced
-            var limit = 20;
+            var limit = 50;
             var offset = 0;
 
             // Override the limit if it is less than the value defined above
@@ -145,7 +143,10 @@ public class SearchController : ControllerBase
                 {
                     if (int.TryParse(requestedLimit, out int parsed))
                     {
-                        limit = parsed;
+                        if (limit > parsed)
+                        {
+                            limit = parsed;
+                        }
                     }
                     else
                     {
@@ -276,37 +277,31 @@ public class SearchController : ControllerBase
                 this.Log.LogInformation("Proxying search request with {hits} results", items.Count);
 
 
-                //query.Add("ids", string.Join(',', items.Select(x => x.Guid.Replace("-", ""))));
+                query.Add("ids", string.Join(',', items.Select(x => x.Guid.Replace("-", ""))));
 
                 if (path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
                 {
                     query.Add("fields", "PrimaryImageAspectRatio"); // Add more fields we need for search hints
                 }
-                var ids = new List<string>();
-                foreach (var item in items)
-                {
-                    ids.Add(item.Guid.Replace("-", ""));
-                }
-
-                var resultList = await this.GetItemsWithCacheFallback(ids, authorization, legacyToken, userId, query);
-                //var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
+    
+                var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
                 this.Log.LogInformation("{searchId}总搜索耗时:{time}ms",searchId,DateTimeOffset.Now.ToUnixTimeMilliseconds()-searchStartTime);
                 if (path.EndsWith("/Search/Hints", true, System.Globalization.CultureInfo.InvariantCulture))
                 {
                     // Handle search hints, expecting a root "SearchHints" array
                     // Restructure the Jellyfin result in a way that clients expecting search hints can work
 
-                    if (resultList == null)
+                    if (responseStream == null)
                         return Content(JellyfinResponses.EmptySearchHints, "application/json");
                     else
                     {
                         // We need to deserialize in order to change the format for the search hint endpoint
-                        //var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse>(responseStream);
+                        var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse<JellyfinItem>>(responseStream);
 
-                        if (resultList.Count == 0)
+                        if (deserialized.TotalRecordCount == 0)
                             return Content(JellyfinResponses.EmptySearchHints, "application/json");
-
-                        foreach (var item in resultList)
+                        
+                        foreach (var item in deserialized.Items)
                         {
                             // Modify items for search hints
 
@@ -357,7 +352,7 @@ public class SearchController : ControllerBase
 
                         var searchHintResponse = new JellyfinSearchHintResponse()
                         {
-                            SearchHints = resultList,
+                            SearchHints = deserialized.Items,
                             TotalRecordCount = total,
                         };
 
@@ -370,20 +365,20 @@ public class SearchController : ControllerBase
                 }
                 else
                 {
-                    var searchHintResponse = new JellyfinSearchHintResponse()
-                    {
-                        SearchHints = resultList,
-                        TotalRecordCount = total,
-                    };
 
-                    using Stream outputStream = new MemoryStream();
-                    await JsonSerializer.SerializeAsync(outputStream, searchHintResponse, this.DefaultJsonOptions);
-                    outputStream.Position = 0;
                     // Handle most Jellyfin routes expecting a root "Items" array
-                    if (resultList == null)
+                    // We need to deserialize in order to change the format for the search hint endpoint
+                    
+                    if (responseStream == null)
                         return Content(JellyfinResponses.Empty, "application/json");
                     else
-                        return Content(await new StreamReader(outputStream).ReadToEndAsync(), "application/json");
+                    {
+                        var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse<Object>>(responseStream);
+                        deserialized.TotalRecordCount = total;
+                        string respBody = JsonSerializer.Serialize(deserialized, this.DefaultJsonOptions);
+                        return Content(respBody, "application/json");
+                    }
+                     
                 }
             }
             else
@@ -395,75 +390,4 @@ public class SearchController : ControllerBase
         }
     }
     
-
-    private async Task<List<JellyfinItem>> GetItemsWithCacheFallback(IEnumerable<string> ids,string authorization, string? legacyToken, string? userId, Dictionary<string, StringValues> query)
-    {
-        if (ids == null)
-            throw new ArgumentNullException(nameof(ids));
-        
-        var idList = ids.ToList();
-        if (idList.Count == 0)
-            return new List<JellyfinItem>();
-
-        // 1. 尝试从缓存获取数据
-        var cachedResults = await this.Redis.GetItemsByIds(idList);
-        
-        // 2. 识别缺失的项目ID
-        var missingIds = new List<string>();
-        var resultList = new List<JellyfinItem>(idList.Count);
-        
-        foreach (var id in idList)
-        {
-            if (cachedResults.TryGetValue(id, out var item))
-            {
-                resultList.Add(item);
-            }
-            else
-            {
-                resultList.Add(null); // 占位符，后续替换
-                missingIds.Add(id);
-            }
-        }
-        
-        // 3. 如果所有项目都在缓存中找到，直接返回
-        if (missingIds.Count == 0)
-            return resultList;
-        query.Add("ids", string.Join(',',missingIds));
-     
-        // 4. 从数据源获取缺失的项目
-        var responseStream = await this.Proxy.ProxySearchRequest(authorization, legacyToken, userId, query);
-    
-        if (responseStream == null)
-            return resultList.Where(item => item != null).ToList();
-        var deserialized = await JsonSerializer.DeserializeAsync<JellyfinItemResponse>(responseStream);
-
-        if(deserialized.TotalRecordCount == 0)
-            return resultList.Where(item => item != null).ToList();
-
-             // 5. 缓存新获取的数据
-        await this.Redis.UpdateItemsCache(deserialized.Items,TimeSpan.FromDays(1));
-        
-        
-        var sourceItems = new Dictionary<string, JellyfinItem>();
-        foreach(var item in deserialized.Items)
-        {
-            sourceItems[item.Id] = item;
-        }
-        
-        // 6. 组合结果并保持原始顺序
-        var missingIndex = 0;
-        for (int i = 0; i < resultList.Count; i++)
-        {
-            if (resultList[i] == null)
-            {
-                var id = idList[i];
-                if (sourceItems.TryGetValue(id, out var item))
-                {
-                    resultList[i] = item;
-                }
-                missingIndex++;
-            }
-        }
-        return resultList.Where(item => item != null).ToList();
-    }
 }
