@@ -394,7 +394,7 @@ public class SearchController : ControllerBase
     public async Task<IActionResult> CdnController()
     {
          // 获取当前请求的完整URL
-        var currentUrl = $"{Request.Scheme}://{Request.Host}{Request.Path}{Request.QueryString}";
+        var currentUrl = $"https://nas.znil.cn:8920/{Request.Path}";
         if (string.IsNullOrEmpty(CdnUrl))
         {
 
