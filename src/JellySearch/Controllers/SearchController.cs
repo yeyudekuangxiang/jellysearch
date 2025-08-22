@@ -12,7 +12,7 @@ namespace JellySearch.Controllers;
 [ApiController]
 public class SearchController : ControllerBase
 {
-    private string? CdnUrl { get; } = Environment.GetEnvironmentVariable("CDN_URl");
+    private string? CdnUrl { get; } = Environment.GetEnvironmentVariable("CDN_URL");
     private ILogger Log { get; set; }
     private JellyfinProxyService Proxy { get; }
     private Meilisearch.Index Index { get; }
