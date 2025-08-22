@@ -21,7 +21,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 
 var meilisearch = new MeilisearchClient(Environment.GetEnvironmentVariable("MEILI_URL"), Environment.GetEnvironmentVariable("MEILI_MASTER_KEY"));
-var index = meilisearch.Index("items");
+var meilisearchIndex = Environment.GetEnvironmentVariable("MEILI_INDEX") ?? "items";
+var index = meilisearch.Index(meilisearchIndex);
 
 builder.Services.AddSingleton<Meilisearch.Index>(index); // Add Meilisearch index as service
 

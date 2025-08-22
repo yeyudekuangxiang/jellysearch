@@ -12,6 +12,7 @@ namespace JellySearch.Controllers;
 [ApiController]
 public class SearchController : ControllerBase
 {
+    private string? CdnUrl { get; } = Environment.GetEnvironmentVariable("CDN_URl");
     private ILogger Log { get; set; }
     private JellyfinProxyService Proxy { get; }
     private Meilisearch.Index Index { get; }
@@ -389,5 +390,27 @@ public class SearchController : ControllerBase
             
         }
     }
+    [HttpGet("/Audio/{audioId}/stream")]
+    public async Task<IActionResult> CdnController()
+    {
+         // 获取当前请求的完整URL
+        var currentUrl = $"{Request.Scheme}://{Request.Host}{Request.Path}{Request.QueryString}";
+        if (string.IsNullOrEmpty(CdnUrl))
+        {
+
+        }
+       
     
+    // 对URL进行编码
+    var encodedUrl = System.Net.WebUtility.UrlEncode(currentUrl);
+    
+    // 目标域名（请替换为实际域名）
+    string targetDomain = CdnUrl;
+    
+    // 构建重定向URL，将编码后的URL作为参数
+    var redirectUrl = $"{targetDomain}?url={encodedUrl}";
+    
+    // 302重定向
+    return Redirect(redirectUrl);
+    }
 }

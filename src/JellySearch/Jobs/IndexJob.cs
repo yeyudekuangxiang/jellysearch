@@ -78,6 +78,7 @@ public class IndexJob : IJob
                 throw new FileNotFoundException("Could not find either library.db or jellyfin.db in config folder.");
             }
 
+            this.Log.LogInformation("连接数据库");
             // Open Jellyfin library
             var connectionString = new SqliteConnectionStringBuilder
             {
@@ -97,10 +98,11 @@ public class IndexJob : IJob
             else
                 command.CommandText = "SELECT id, Type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM BaseItems";
 
+            this.Log.LogInformation("查询数据");
             using var reader = await command.ExecuteReaderAsync();
 
             var items = new List<Item>();
-
+            this.Log.LogInformation("遍历数据");
             while (await reader.ReadAsync())
             {
                 try
@@ -140,6 +142,7 @@ public class IndexJob : IJob
             }
 
 
+            this.Log.LogInformation("更新文档");
             if (items.Count > 0)
             {
                 // Add items to search index in batches
