@@ -1,14 +1,13 @@
 # 使用官方.NET SDK镜像作为构建环境
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
-
-# 复制项目文件并恢复依赖
-COPY *.csproj ./
-RUN dotnet restore
+WORKDIR /build
 
 # 复制所有源代码并构建项目
 COPY . ./
-RUN dotnet publish -c Release -o /app/publish
+RUN cd ./src/JellySearch \
+    && dotnet restore \
+    && cd ../ \
+    && dotnet publish -c Release -o /app/publish
 
 # 使用运行时镜像
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
