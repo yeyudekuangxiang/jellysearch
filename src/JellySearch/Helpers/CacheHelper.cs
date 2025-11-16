@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Threading;
+using System.Text;
 
 namespace JellySearch.Helpers;
 

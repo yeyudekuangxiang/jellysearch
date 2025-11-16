@@ -32,9 +32,15 @@ public class SearchController : ControllerBase
 
     [HttpDelete("/Users/{userId}/FavoriteItems/{itemId}")]
     [HttpPost("/Users/{userId}/FavoriteItems/{itemId}")]
-    public async Task<IActionResult> FavoriteItems([FromRoute(Name = "UserId")] string? routeUserId)
+    public async Task<IActionResult> FavoriteItems(
+        [FromRoute(Name = "UserId")] string? routeUserId,
+        [FromHeader(Name = "Authorization")] string? headerAuthorization,
+        [FromHeader(Name = "X-Emby-Authorization")] string? legacyAuthorization,
+        [FromHeader(Name = "X-Mediabrowser-Token")] string? legacyToken)
     {
         this.Cache.RemoveByUserId(routeUserId);
+         // Get authorization from either the real "Authorization" header or from the legacy "X-Emby-Authorization" header
+        var authorization = legacyAuthorization ?? headerAuthorization;
         var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
          
         if (response == null)
