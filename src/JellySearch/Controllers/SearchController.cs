@@ -16,6 +16,7 @@ public class SearchController : ControllerBase
     private ILogger Log { get; set; }
     private JellyfinProxyService Proxy { get; }
     private Meilisearch.Index Index { get; }
+    private StringCache<string> Cache = new StringCache<string>();
     private JsonSerializerOptions DefaultJsonOptions = new()
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
@@ -28,6 +29,18 @@ public class SearchController : ControllerBase
         this.Index = index;
     }
 
+    [HttpDelete("/Users/{userId}/FavoriteItems/{itemId}")]
+    [HttpPost("/Users/{userId}/FavoriteItems/{itemId}")]
+    public async Task<IActionResult> FavoriteItems([FromRoute(Name = "UserId")] string? routeUserId)
+    {
+        this.Cache.RemoveByUserId(routeUserId);
+        var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
+         
+        if (response == null)
+            return Content(JellyfinResponses.Empty, "application/json");
+        else
+            return Content(response, "application/json");
+    }
     /// <summary>
     /// Proxy all possible search URLs to the central Items endpoint
     /// </summary>
@@ -47,6 +60,7 @@ public class SearchController : ControllerBase
         [FromHeader(Name = "X-Emby-Authorization")] string? legacyAuthorization,
         [FromHeader(Name = "X-Mediabrowser-Token")] string? legacyToken,
         [FromQuery]string? searchTerm,
+        [FromQuery]bool? isFavorite,
         [FromRoute(Name = "UserId")] string? routeUserId,
         [FromQuery(Name = "UserId")] string? queryUserId)
     {
@@ -89,13 +103,26 @@ public class SearchController : ControllerBase
 
         // If not searching, proxy directly for reverse proxies that cannot filter by query parameter
         // Genres are currently not supported
+
         if (searchTerm == null || path.EndsWith("/Genres", true, System.Globalization.CultureInfo.InvariantCulture))
         {
+            var currentPath = $"{Request.Path}{Request.QueryString}";
+            var cacheKey = MD5Helper.GenerateMD5(currentPath);
+            if (isFavorite == true && this.Cache.TryGet(cacheKey, out string cacheStr))
+            {
+                this.Log.LogInformation("{searchId}从缓存获取收藏夹结果", searchId);
+                return Content(cacheStr, "application/json");
+            }
             // If the search term is empty, we will proxy directly
             this.Log.LogInformation("Proxying non-search request");
 
             var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
             this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
+            if (isFavorite==true && response != null)
+            {
+                this.Cache.Set(cacheKey, response, TimeSpan.FromHours(24 * 7)); // Cache favorite results for 7 days
+                this.Log.LogInformation("{searchId}缓存收藏夹结果",searchId);
+            }
             if (response == null)
                 return Content(JellyfinResponses.Empty, "application/json");
             else
@@ -412,5 +439,9 @@ public class SearchController : ControllerBase
     
     // 302重定向
     return Redirect(redirectUrl);
+    }
+
+    private string Md5(){
+
     }
 }
