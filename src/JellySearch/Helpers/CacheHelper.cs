@@ -40,7 +40,7 @@ public class StringCache<T>
         var cacheItem = new CacheItem<T>
         {
             Value = value,
-            ExpiryTime = DateTime.Now.Add(expiry)
+            ExpiryTime = DateTime.Now.Add(expiry),
             UserId = userId
         };
         

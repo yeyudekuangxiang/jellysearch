@@ -5,6 +5,7 @@ using JellySearch.Services;
 using Meilisearch;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
+using JellySearch.Helpers;
 
 namespace JellySearch.Controllers;
 
@@ -120,7 +121,7 @@ public class SearchController : ControllerBase
             this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
             if (isFavorite==true && response != null)
             {
-                this.Cache.Set(cacheKey, response, TimeSpan.FromHours(24 * 7)); // Cache favorite results for 7 days
+                this.Cache.Set(cacheKey,userId, response, TimeSpan.FromHours(24 * 7)); // Cache favorite results for 7 days
                 this.Log.LogInformation("{searchId}缓存收藏夹结果",searchId);
             }
             if (response == null)
@@ -441,7 +442,5 @@ public class SearchController : ControllerBase
     return Redirect(redirectUrl);
     }
 
-    private string Md5(){
-
-    }
+   
 }
