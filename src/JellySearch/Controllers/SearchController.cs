@@ -115,6 +115,7 @@ public class SearchController : ControllerBase
         {
             var currentPath = $"{Request.Path}{Request.QueryString}";
             var cacheKey = MD5Helper.GenerateMD5(currentPath);
+            this.Log.LogInformation("路径{currentPath} {cacheKey} {isFavorite}", currentPath, cacheKey  ,isFavorite );
             if (isFavorite == true && this.Cache.TryGet(cacheKey, out string cacheStr))
             {
                 this.Log.LogInformation("{searchId}从缓存获取收藏夹结果", searchId);
