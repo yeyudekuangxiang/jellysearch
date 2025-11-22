@@ -6,13 +6,13 @@ namespace JellySearch.Models;
 public class EmbyAudioSearchResponse
 {
     [JsonPropertyName("Items")]
-    public List<EmbyItem> Items { get; set; }
+    public List<Object> Items { get; set; }
 
     [JsonPropertyName("TotalRecordCount")]
     public int TotalRecordCount { get; set; }
 }
 
-public class EmbyItem
+public class EmbyAudioItem
 {
     [JsonPropertyName("Name")]
     public string Name { get; set; }
@@ -323,4 +323,6 @@ public class ImageTags
     [JsonPropertyName("Primary")]
     public string Primary { get; set; }
 }
+
+
 
