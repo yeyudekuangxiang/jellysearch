@@ -31,9 +31,6 @@ public class SearchController : ControllerBase
     }
     [HttpGet("/emby/Users/{userId}/Items")]
     public async Task<IActionResult>EmbyAudioSearch(
-        [FromHeader(Name = "Authorization")] string? headerAuthorization,
-        [FromHeader(Name = "X-Emby-Authorization")] string? legacyAuthorization,
-        [FromHeader(Name = "X-Mediabrowser-Token")] string? legacyToken,
         [FromQuery]string? searchTerm,
 
         [FromRoute(Name = "UserId")] string? routeUserId,
@@ -49,16 +46,9 @@ public class SearchController : ControllerBase
         // Get the user id from either the route or the query
         var userId = routeUserId ?? queryUserId;
 
-        // Get authorization from either the real "Authorization" header or from the legacy "X-Emby-Authorization" header
-        var authorization = legacyAuthorization ?? headerAuthorization;
-
-        if(authorization == null)
-        {
-            this.Log.LogWarning("Received request without Authorization header");
-            return Content(JellyfinResponses.Empty, "application/json");
-        }
+       
        this.Log.LogInformation("emby 搜索代理 this.Request.Path");
-            var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
+            var response = await this.Proxy.ProxyRequest("", "", this.Request.Path, this.Request.QueryString.ToString());
             this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
             if (response == null)
                 return Content(JellyfinResponses.Empty, "application/json");
