@@ -6,7 +6,7 @@ namespace JellySearch.Models;
 public class EmbyAudioSearchResponse
 {
     [JsonPropertyName("Items")]
-    public List<Object> Items { get; set; }
+    public List<object> Items { get; set; }
 
     [JsonPropertyName("TotalRecordCount")]
     public int TotalRecordCount { get; set; }
