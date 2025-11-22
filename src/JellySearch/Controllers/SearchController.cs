@@ -33,7 +33,10 @@ public class SearchController : ControllerBase
     public async Task<IActionResult>EmbyAudioSearch(
         [FromQuery]string? searchTerm,
         [FromRoute(Name = "UserId")] string? routeUserId,
-        [FromQuery(Name = "UserId")] string? queryUserId)
+        [FromQuery(Name = "UserId")] string? queryUserId,
+        [FromHeader(Name = "Authorization")] string? headerAuthorization,
+        [FromHeader(Name = "X-Emby-Authorization")] string? legacyAuthorization,
+        [FromHeader(Name = "X-Mediabrowser-Token")] string? legacyToken)
     {
         Random random = new Random();
         var searchId =  random.Next();
@@ -42,12 +45,15 @@ public class SearchController : ControllerBase
         // Get the requested path
         var path = this.Request.Path.Value ?? "";
 
+ // Get authorization from either the real "Authorization" header or from the legacy "X-Emby-Authorization" header
+        var authorization = legacyAuthorization ?? headerAuthorization;
+
         // Get the user id from either the route or the query
         var userId = routeUserId ?? queryUserId;
 
        
        this.Log.LogInformation("emby 搜索代理 this.Request.Path");
-            var response = await this.Proxy.ProxyRequest("", "", this.Request.Path, this.Request.QueryString.ToString());
+            var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
             this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
             if (response == null)
                 return Content(JellyfinResponses.Empty, "application/json");
@@ -125,7 +131,7 @@ public class SearchController : ControllerBase
     {
         if (Environment.GetEnvironmentVariable("APP") == "emby")
         {
-            return this.EmbyAudioSearch(searchTerm, routeUserId, queryUserId).Result;
+            return this.EmbyAudioSearch(searchTerm, routeUserId, queryUserId,headerAuthorization,legacyAuthorization,legacyToken).Result;
         }
         Random random = new Random();
         var searchId =  random.Next();
