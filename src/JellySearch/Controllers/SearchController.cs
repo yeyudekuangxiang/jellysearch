@@ -32,7 +32,6 @@ public class SearchController : ControllerBase
     [HttpGet("/emby/Users/{userId}/Items")]
     public async Task<IActionResult>EmbyAudioSearch(
         [FromQuery]string? searchTerm,
-
         [FromRoute(Name = "UserId")] string? routeUserId,
         [FromQuery(Name = "UserId")] string? queryUserId)
     {
@@ -124,6 +123,10 @@ public class SearchController : ControllerBase
         [FromRoute(Name = "UserId")] string? routeUserId,
         [FromQuery(Name = "UserId")] string? queryUserId)
     {
+        if (Environment.GetEnvironmentVariable("APP") == "emby")
+        {
+            return this.EmbyAudioSearch(searchTerm, routeUserId, queryUserId).Result;
+        }
         Random random = new Random();
         var searchId =  random.Next();
         var searchStartTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
