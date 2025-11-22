@@ -40,9 +40,12 @@ var app = builder.Build();
 app.UseCors("AllowAllOrigins");
 app.MapControllers();
 
-await scheduler.Start();
 
-var indexJobData = new JobDataMap
+
+if (Environment.GetEnvironmentVariable("APP")!="emby")
+{
+    await scheduler.Start();
+    var indexJobData = new JobDataMap
 {
     { "index", index },
     { "logFactory", app.Services.GetRequiredService<ILoggerFactory>() },
@@ -54,7 +57,6 @@ var indexJob = JobBuilder.Create<IndexJob>()
     .StoreDurably()
     .DisallowConcurrentExecution()
     .Build();
-
 var indexCron = Environment.GetEnvironmentVariable("INDEX_CRON");
 
 if (indexCron != null)
@@ -72,5 +74,12 @@ else
 }
 
 await scheduler.TriggerJob(new JobKey("indexJob")); // Run sync on start
+
+}
+
+
+
+
+
 
 app.Run();

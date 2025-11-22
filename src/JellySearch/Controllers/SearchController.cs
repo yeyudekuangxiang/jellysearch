@@ -84,6 +84,49 @@ public class SearchController : ControllerBase
         // Get authorization from either the real "Authorization" header or from the legacy "X-Emby-Authorization" header
         var authorization = legacyAuthorization ?? headerAuthorization;
 
+        if(authorization == null)
+        {
+            this.Log.LogWarning("Received request without Authorization header");
+            return Content(JellyfinResponses.Empty, "application/json");
+        }
+        //避免emby返回过多数据 
+        if (legacyAuthorization != null && legacyAuthorization!="")
+        { 
+            this.Log.LogInformation("emby 搜索代理 this.Request.Path");
+            var response = await this.Proxy.ProxyRequest(authorization, legacyToken, this.Request.Path, this.Request.QueryString.ToString());
+            this.Log.LogInformation("{searchId}代理搜索耗时:{time}ms",  searchId, DateTimeOffset.Now.ToUnixTimeMilliseconds() - searchStartTime);
+            if (response == null)
+                return Content(JellyfinResponses.Empty, "application/json");
+            else if (searchTerm == null ||  !this.Request.Path.ToString().EndsWith("/Items"))
+            {
+                this.Log.LogInformation("emby 不是音乐搜索直接返回搜索结果");
+                return Content(response, "application/json");
+            }
+            else
+            {
+                this.Log.LogInformation("emby 处理返回条数");
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+        
+                var resp = JsonSerializer.Deserialize<EmbyAudioSearchResponse>(response, options);
+                
+                if (resp == null || resp?.TotalRecordCount < 500)
+                {
+                     return Content(response, "application/json");
+                }
+
+                resp.TotalRecordCount = resp.TotalRecordCount>500 && resp.Items.Count<500 ? 500:resp.Items.Count;
+                using Stream outputStream = new MemoryStream();
+                await JsonSerializer.SerializeAsync(outputStream, resp, options);
+                outputStream.Position = 0;
+
+                return Content(await new StreamReader(outputStream).ReadToEndAsync(), "application/json");
+            }
+        }
+
         if (Environment.GetEnvironmentVariable("JELLYSEARCH_DEBUG_REQUESTS") == "1")
         {
             Console.WriteLine("GET " + path + " from " + userId);
@@ -102,11 +145,7 @@ public class SearchController : ControllerBase
             }
         }
 
-        if(authorization == null)
-        {
-            this.Log.LogWarning("Received request without Authorization header");
-            return Content(JellyfinResponses.Empty, "application/json");
-        }
+      
 
         // If not searching, proxy directly for reverse proxies that cannot filter by query parameter
         // Genres are currently not supported
