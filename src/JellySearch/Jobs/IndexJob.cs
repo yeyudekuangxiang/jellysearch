@@ -16,7 +16,7 @@ public class MediaItem
 
 public class IndexJob : IJob
 {
-    private string? JellyfinConfigDir { get; } = Environment.GetEnvironmentVariable("JELLYFIN_CONFIG_DIR");
+    private string? EmbyConfigDir { get; } = Environment.GetEnvironmentVariable("EMBY_CONFIG_DIR");
     private string? AssestPathReplace { get; } = Environment.GetEnvironmentVariable("ASSEST_PATH_REPLACE"); // [{"/volume1":"Z:","/":"\\"}]
     private string? IndexLrc { get; } = Environment.GetEnvironmentVariable("INDEX_LRC");
     private ILogger? Log { get; set; }
@@ -48,7 +48,7 @@ public class IndexJob : IJob
                 new string[] { "name", "artists", "albumArtists", "originalTitle", "lrcContent", "productionYear", "seriesName", "genres", "tags", "studios", "overview" }
             );
 
-            // We only need the GUID to pass to Jellyfin
+            // We only need the GUID to pass to Emby
             await index.UpdateDisplayedAttributesAsync(
                 new string[] { "guid", "name" }
             );
@@ -58,31 +58,20 @@ public class IndexJob : IJob
                 new string[] { "exactness", "proximity", "attribute", "words", "typo", "sort", "communityRating:desc", "criticRating:desc" }
             );
 
-            var legacy = true;
             var databasePath = "/data/library.db";
 
-            this.Log.LogInformation(this.JellyfinConfigDir + databasePath);
+            this.Log.LogInformation(this.EmbyConfigDir + databasePath);
 
-            // If the old database does not exist, use the new one
-            if (!File.Exists(Path.Join(this.JellyfinConfigDir + databasePath)))
+            if (!File.Exists(Path.Join(this.EmbyConfigDir + databasePath)))
             {
-                this.Log.LogInformation("No library.db available, trying jellyfin.db");
-
-                legacy = false;
-                databasePath = "/data/jellyfin.db";
-            }
-
-            // If the new database doesn't exist either, abort
-            if (!File.Exists(Path.Join(this.JellyfinConfigDir + databasePath)))
-            {
-                throw new FileNotFoundException("Could not find either library.db or jellyfin.db in config folder.");
+                throw new FileNotFoundException("Could not find library.db in Emby config folder.");
             }
 
             this.Log.LogInformation("连接数据库");
-            // Open Jellyfin library
+            // Open Emby library
             var connectionString = new SqliteConnectionStringBuilder
             {
-                DataSource = this.JellyfinConfigDir + databasePath,
+                DataSource = this.EmbyConfigDir + databasePath,
                 Mode = SqliteOpenMode.ReadOnly,
             };
 
@@ -92,11 +81,7 @@ public class IndexJob : IJob
             // Query all base items
             using var command = connection.CreateCommand();
 
-            // Adjust query if querying a legacy database
-            if (legacy)
-                command.CommandText = "SELECT guid, type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM TypedBaseItems";
-            else
-                command.CommandText = "SELECT id, Type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM BaseItems";
+            command.CommandText = "SELECT guid, type, ParentId, CommunityRating, Name, Overview, ProductionYear, Genres, Studios, Tags, IsFolder, CriticRating, OriginalTitle, SeriesName, Artists, AlbumArtists, data FROM TypedBaseItems";
 
             this.Log.LogInformation("查询数据");
             using var reader = await command.ExecuteReaderAsync();
@@ -112,7 +97,7 @@ public class IndexJob : IJob
                         Guid = reader.GetGuid(0).ToString(),
                         Type = !reader.IsDBNull(1) ? reader.GetString(1) : null,
                         ParentId = !reader.IsDBNull(2) ? reader.GetString(2) : null,
-                        CommunityRating = !reader.IsDBNull(3) ? reader.GetInt16(3) : null,
+                        CommunityRating = !reader.IsDBNull(3) ? (float)reader.GetDouble(3) : null,
                         Name = !reader.IsDBNull(4) ? reader.GetString(4) : null,
                         Overview = !reader.IsDBNull(5) ? reader.GetString(5) : null,
                         ProductionYear = !reader.IsDBNull(6) ? reader.GetInt32(6) : null,
@@ -120,7 +105,7 @@ public class IndexJob : IJob
                         Studios = !reader.IsDBNull(8) ? reader.GetString(8).Split('|') : null,
                         Tags = !reader.IsDBNull(9) ? reader.GetString(9).Split('|') : null,
                         IsFolder = !reader.IsDBNull(10) ? reader.GetInt16(10) : null,
-                        CriticRating = !reader.IsDBNull(11) ? reader.GetInt16(11) : null,
+                        CriticRating = !reader.IsDBNull(11) ? (float)reader.GetDouble(11) : null,
                         OriginalTitle = !reader.IsDBNull(12) ? reader.GetString(12) : null,
                         SeriesName = !reader.IsDBNull(13) ? reader.GetString(13) : null,
                         Artists = !reader.IsDBNull(14) ? reader.GetString(14).Split('|') : null,

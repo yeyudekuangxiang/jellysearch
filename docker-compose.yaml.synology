@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     container_name: jellysearch
     volumes:
-      - /var/packages/jellyfin/var:/config:ro
+      - /var/packages/EmbyServer/var:/config:ro
       - /volume1/music:/data/music
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -12,8 +12,8 @@ services:
       MEILI_MASTER_KEY: "Abcabc123999"
       MEILI_URL: "http://meilisearch:7700"
       INDEX_CRON: "0 0 0/2 ? * * *"
-      JELLYFIN_CONFIG_DIR: "/config/data"
-      JELLYFIN_URL: "http://host.docker.internal:8096"
+      EMBY_CONFIG_DIR: "/config/data"
+      EMBY_URL: "http://host.docker.internal:8096"
       ASSEST_PATH_REPLACE: '[{"/volume1/music":"/data/music"}]' 
       INDEX_LRC: "true"
     links:

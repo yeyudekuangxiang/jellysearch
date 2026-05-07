@@ -1,15 +1,15 @@
 services:
-  jellyfin:
-    image: jellyfin/jellyfin:latest
+  emby:
+    image: emby/embyserver:latest
     volumes:
       - config:/config
     labels:
       - traefik.enable=true
-      - traefik.http.services.jellyfin.loadbalancer.server.port=8096
+      - traefik.http.services.emby.loadbalancer.server.port=8096
 
-      - traefik.http.routers.jellyfin.rule=Host(`demo.jellyfin.org`)
+      - traefik.http.routers.emby.rule=Host(`demo.emby.media`)
 
-    ...rest of your jellyfin config
+    ...rest of your emby config
 
   jellysearch:
     image: domistyle/jellysearch
@@ -19,11 +19,13 @@ services:
     environment:
       MEILI_MASTER_KEY: "1234"
       INDEX_CRON: "0 0 0/2 ? * * *"
+      EMBY_CONFIG_DIR: "/config/data"
+      EMBY_URL: "http://emby:8096"
     labels:
       - traefik.enable=true
       - traefik.http.services.jellysearch.loadbalancer.server.port=5000
 
-      - traefik.http.routers.jellysearch.rule=Host(`demo.jellyfin.org`) && !Path(`/Genres`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))
+      - traefik.http.routers.jellysearch.rule=Host(`demo.emby.media`) && !Path(`/Genres`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))
   meilisearch:
     image: getmeili/meilisearch:v1.9
     restart: unless-stopped

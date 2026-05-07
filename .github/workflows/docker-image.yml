@@ -5,6 +5,7 @@ on:   # 配置触发workflow的事件
   push:
     branches:   # main分支有push时触发此workflow
       - 'master'
+      - 'emby'
     tags:       # tag更新时触发此workflow
       - '*'
   workflow_dispatch:
@@ -69,5 +70,6 @@ jobs:
             APP_VERSION=${{ env.APP_VERSION }}
           # 生成两个 docker tag: ${APP_VERSION} 和 latest
           tags: |
-            ${{ env.DOCKERHUB_REPO }}:latest
-            ${{ env.DOCKERHUB_REPO }}:${{ env.APP_VERSION }}
+            ${{ env.DOCKERHUB_REPO }}:${{ github.ref_name }}-latest
+            ${{ env.DOCKERHUB_REPO }}:${{ github.ref_name }}-${{ env.APP_VERSION }}
+       

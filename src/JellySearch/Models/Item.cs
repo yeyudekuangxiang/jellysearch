@@ -6,7 +6,7 @@ public class Item
     public string? Type { get; set; }
     public string? ParentId { get; set; }
 
-    public short? CommunityRating { get; set; }
+    public float? CommunityRating { get; set; }
 
     public string? Name { get; set; }
     public string? Overview { get; set; }
@@ -18,7 +18,7 @@ public class Item
     public string[]? Tags { get; set; }
 
     public short? IsFolder { get; set; }
-    public short? CriticRating { get; set; }
+    public float? CriticRating { get; set; }
 
     public string? OriginalTitle { get; set; }
 

@@ -8,7 +8,7 @@ public class JellyfinProxyService : IHostedService, IDisposable
     private HttpClient Client { get; }
     private ILogger Log { get; set; }
 
-    private string? JellyfinUrl { get; set; } = Environment.GetEnvironmentVariable("JELLYFIN_URL");
+    private string? JellyfinUrl { get; set; } = Environment.GetEnvironmentVariable("EMBY_URL");
     //private string? JellyfinToken { get; set; } = Environment.GetEnvironmentVariable("JELLYFIN_TOKEN");
 
     private string JellyfinSearchUrl { get; } = "{0}/Users/{1}/Items{2}";
